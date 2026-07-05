@@ -27,20 +27,30 @@ def prompt_builder(prompt, functions):
     """
 
 
-def get_name(token: str, string: str):
-    name = ""
+def get_name(token: str):
+    if not hasattr(get_name, "name"):
+        get_name.name = ""
     if '",' not in token:
-        return name
-    else:
-        name = string.split('"')[7]
-    return name
+        get_name.name += token
+        return None
+    result = get_name.name
+    get_name.name = ""
+    return result
 
 
 def complete_parameters(parameters: dict, name):
     params = parameters[name]
     for param in params.keys():
-        yield f'"{param}": '
+        yield f' "{param}": '
 
+
+# def add_parameter(string, model):
+#     try:
+#         temp = next(string)
+#         ids += model.encode(temp).tolist()[0]
+#         string += temp
+#     except StopIteration:
+#         pass
 
 def main():
     p = parsing()
@@ -54,8 +64,8 @@ def main():
     # with open(vocabulary_path, "r") as f:
     #     vocabulary = json.load(f)
     # vocabulary = {value: key for key, value in vocabulary.items()}
-    output = []
     # start  =time
+    output = []
     for prompt in prompts:
         string = f'{{"prompt": "{prompt}", "name": "'
         # print(string,  end="", flush=True)
@@ -63,6 +73,8 @@ def main():
         # generated_ids = []
         name_generated = False
         param_generated = False
+        param_generated = False
+        dic = {"prompt": prompt}
         while 1:
             logits = m.get_logits_from_input_ids(ids)
             next_token_id = int(np.argmax(logits))
@@ -71,9 +83,10 @@ def main():
             value = m.decode(next_token_id)
             string += value
             if not name_generated:
-                name = get_name(value, string)
-            if name:
-                name_generated = True
+                name = get_name(value)
+                if '",' in value:
+                    name_generated = True
+                    dic.update({"name": name})
             if name_generated and "parameters" not in string:
                 parameters = ' "parameters": {'
                 ids += m.encode(parameters).tolist()[0]
@@ -82,10 +95,19 @@ def main():
                 if not param_generated:
                     prm = complete_parameters(params, name)
                     param_generated = True
-                try
-                temp = next(prm)
-                ids += m.encode(temp).tolist()[0]
-                string += temp
+                    try:
+                        temp = next(prm)
+                        ids += m.encode(temp).tolist()[0]
+                        string += temp
+                    except StopIteration:
+                        pass
+                elif ',' in value:
+                    try:
+                        temp = next(prm)
+                        ids += m.encode(temp).tolist()[0]
+                        string += temp
+                    except StopIteration:
+                        pass
             print(string)
             try:
                 if string.endswith("\n"):
@@ -94,9 +116,8 @@ def main():
                 break
             except json.JSONDecodeError:
                 pass
-        output.append(json.loads(string))
-        print(name)
         print("###############################################")
+        output.append(dic)
     with open("data/output.json", "w") as f:
         json.dump(output, f)
 
