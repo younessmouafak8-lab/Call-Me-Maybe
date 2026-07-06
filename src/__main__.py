@@ -41,7 +41,12 @@ def get_name(token: str):
 def complete_parameters(parameters: dict, name):
     params = parameters[name]
     for param in params.keys():
-        yield f' "{param}": '
+        param_type = params[param]["type"]
+        if param_type == "string":
+            string = f'"{param}": "'
+        else:
+            string = f'"{param}":'
+        yield (param, string, param_type)
 
 
 # def add_parameter(string, model):
@@ -73,7 +78,6 @@ def main():
         # generated_ids = []
         name_generated = False
         param_generated = False
-        param_generated = False
         dic = {"prompt": prompt}
         while 1:
             logits = m.get_logits_from_input_ids(ids)
@@ -95,19 +99,27 @@ def main():
                 if not param_generated:
                     prm = complete_parameters(params, name)
                     param_generated = True
+                    param_value = ""
                     try:
-                        temp = next(prm)
+                        param_name, temp, param_type = next(prm)
                         ids += m.encode(temp).tolist()[0]
                         string += temp
                     except StopIteration:
                         pass
-                elif ',' in value:
+                elif ',' in value or '}' in value:
                     try:
-                        temp = next(prm)
+                        if param_type == "number":
+                            param_value = float(param_value)
+                        dic.update({param_name: param_value})
+                        param_value = ""
+                        param_name, temp, param_type = next(prm)
                         ids += m.encode(temp).tolist()[0]
                         string += temp
                     except StopIteration:
                         pass
+                elif param_generated:
+                    param_value += value
+
             print(string)
             try:
                 if string.endswith("\n"):
@@ -116,10 +128,14 @@ def main():
                 break
             except json.JSONDecodeError:
                 pass
+        print(dic)
         print("###############################################")
         output.append(dic)
     with open("data/output.json", "w") as f:
         json.dump(output, f)
 
 
-main()
+try:
+    main()
+except Exception as e:
+    print(f"Error: {e}")
