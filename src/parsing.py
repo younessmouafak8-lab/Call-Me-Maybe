@@ -28,6 +28,13 @@ def get_functions(file: str) -> list[dict]:
     for func in data:
         if not isinstance(func, dict):
             raise ValueError("expected a dictionary")
+        if 'name' not in func or 'description' not in func or \
+                'parameters' not in func:
+            raise ValueError("missing key")
+        if not isinstance(func['parameters'], dict):
+            raise ValueError("expected a dictionary")
+        for param, value in func['parameters'].items():
+            ...
     return data
 
 

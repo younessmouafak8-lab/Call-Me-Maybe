@@ -59,17 +59,17 @@ def valide_ids(functions, vocabulary):
     name_ids = set()
     for id, token in vocabulary.items():
         if token and all(c in allowed_chars for c in token):
-            name_ids.add(id)
+            name_ids.add(int(id))
 
     number_ids = set()
     for id, token in vocabulary.items():
-        if token and all(c in "0123456789.," for c in token):
-            number_ids.add(id)
+        if token and all(c in "0123456789.,}" for c in token):
+            number_ids.add(int(id))
 
     end_ids = set()
     for id, token in vocabulary.items():
         if token and all(c in "}\n" for c in token):
-            end_ids.add(id)
+            end_ids.add(int(id))
 
     return (name_ids, number_ids, end_ids)
 
@@ -109,7 +109,8 @@ def main():
             copy = logits.copy()
             if not name_generated:
                 check_this(copy, name_ids)
-            if name_generated and param_generated and param_type == "number" and not param_saved:
+            if name_generated and param_generated and\
+                    param_type == "number" and not param_saved:
                 check_this(copy, number_ids)
             # if param_saved:
             #     check_this(copy, end_ids)
