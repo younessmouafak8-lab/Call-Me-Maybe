@@ -49,14 +49,6 @@ def complete_parameters(parameters: dict, name):
         yield (param, string, param_type)
 
 
-# def add_parameter(string, model):
-#     try:
-#         temp = next(string)
-#         ids += model.encode(temp).tolist()[0]
-#         string += temp
-#     except StopIteration:
-#         pass
-
 def main():
     p = parsing()
     if not p:
@@ -65,25 +57,24 @@ def main():
     func_def = [f"{func['name']}: {func['parameters']}" for func in functions]
     params = {func["name"]: func["parameters"] for func in functions}
     m = model()
-    # vocabulary_path = m.get_path_to_vocab_file()
-    # with open(vocabulary_path, "r") as f:
-    #     vocabulary = json.load(f)
-    # vocabulary = {value: key for key, value in vocabulary.items()}
-    # start  =time
+    vocabulary_path = m.get_path_to_vocab_file()
+    with open(vocabulary_path, "r") as f:
+        vocabulary = json.load(f)
+    vocabulary = {value: key for key, value in vocabulary.items()}
+    start = time()
     output = []
     for prompt in prompts:
         string = f'{{"prompt": "{prompt}", "name": "'
-        # print(string,  end="", flush=True)
         ids = m.encode(prompt_builder(prompt, func_def) + (string)).tolist()[0]
-        # generated_ids = []
         name_generated = False
         param_generated = False
+        param_saved = False
         dic = {"prompt": prompt}
+        parameters_dic = {}
         while 1:
             logits = m.get_logits_from_input_ids(ids)
             next_token_id = int(np.argmax(logits))
             ids.append(next_token_id)
-            # generated_ids.append(next_token_id)
             value = m.decode(next_token_id)
             string += value
             if not name_generated:
@@ -106,19 +97,24 @@ def main():
                         string += temp
                     except StopIteration:
                         pass
-                elif ',' in value or '}' in value:
+                elif not param_saved and (',' in value or '}' in value):
                     try:
                         if param_type == "number":
                             param_value = float(param_value)
-                        dic.update({param_name: param_value})
+                        else:
+                            param_value += value
+                            param_value = param_value.split('"')[0]
+                        parameters_dic.update({param_name: param_value})
                         param_value = ""
                         param_name, temp, param_type = next(prm)
                         ids += m.encode(temp).tolist()[0]
                         string += temp
                     except StopIteration:
-                        pass
-                elif param_generated:
+                        param_saved = True
+                elif param_generated and not param_saved:
                     param_value += value
+                if param_saved:
+                    dic.update({"parameters": parameters_dic})
 
             print(string)
             try:
@@ -131,7 +127,9 @@ def main():
         print(dic)
         print("###############################################")
         output.append(dic)
-    with open("data/output.json", "w") as f:
+    end = time()
+    print(end - start)
+    with open(output_file, "w") as f:
         json.dump(output, f)
 
 
