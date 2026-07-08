@@ -49,6 +49,37 @@ def complete_parameters(parameters: dict, name):
         yield (param, string, param_type)
 
 
+def valide_ids(functions, vocabulary):
+    allowed_chars = set()
+    for func in functions:
+        for c in func['name']:
+            allowed_chars.add(c)
+    allowed_chars.add('"')
+    allowed_chars.add(',')
+    name_ids = set()
+    for id, token in vocabulary.items():
+        if token and all(c in allowed_chars for c in token):
+            name_ids.add(id)
+
+    number_ids = set()
+    for id, token in vocabulary.items():
+        if token and all(c in "0123456789.," for c in token):
+            number_ids.add(id)
+
+    end_ids = set()
+    for id, token in vocabulary.items():
+        if token and all(c in "}\n" for c in token):
+            end_ids.add(id)
+
+    return (name_ids, number_ids, end_ids)
+
+
+def check_this(logits, ids):
+    for i in range(len(logits)):
+        if i not in ids:
+            logits[i] = -np.inf
+
+
 def main():
     p = parsing()
     if not p:
@@ -63,6 +94,7 @@ def main():
     vocabulary = {value: key for key, value in vocabulary.items()}
     start = time()
     output = []
+    name_ids, number_ids, end_ids = valide_ids(functions, vocabulary)
     for prompt in prompts:
         string = f'{{"prompt": "{prompt}", "name": "'
         ids = m.encode(prompt_builder(prompt, func_def) + (string)).tolist()[0]
@@ -71,9 +103,17 @@ def main():
         param_saved = False
         dic = {"prompt": prompt}
         parameters_dic = {}
+        param_type = ""
         while 1:
             logits = m.get_logits_from_input_ids(ids)
-            next_token_id = int(np.argmax(logits))
+            copy = logits.copy()
+            if not name_generated:
+                check_this(copy, name_ids)
+            if name_generated and param_generated and param_type == "number" and not param_saved:
+                check_this(copy, number_ids)
+            # if param_saved:
+            #     check_this(copy, end_ids)
+            next_token_id = int(np.argmax(copy))
             ids.append(next_token_id)
             value = m.decode(next_token_id)
             string += value
@@ -99,7 +139,7 @@ def main():
                         pass
                 elif not param_saved and (',' in value or '}' in value):
                     try:
-                        if param_type == "number":
+                        if param_value and param_type == "number":
                             param_value = float(param_value)
                         else:
                             param_value += value
