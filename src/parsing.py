@@ -13,9 +13,12 @@ def get_prompts(file: str) -> list[Prompt]:
     if not isinstance(data, list):
         raise ValueError("expected a list")
     prompts = []
-    for item in data:
+    for i, item in enumerate(data):
         if not isinstance(item, dict):
             raise ValueError("expected a dictionary")
+        if len(item) > 1:
+            raise ValueError(f"invalid key:value pair in dictionary number {i + 1}")
+
         prompts.append(Prompt(prompt=item.get('prompt')).prompt)
     return prompts
 
