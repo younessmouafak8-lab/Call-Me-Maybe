@@ -24,6 +24,7 @@ def get_prompts(file: str) -> list[Prompt]:
 
 
 def get_functions(file: str) -> list[dict]:
+    valid_types = {"number", "string", "boolean", "integer"}
     with open(file, "r") as f:
         data = json.load(f)
     if not isinstance(data, list):
@@ -37,7 +38,13 @@ def get_functions(file: str) -> list[dict]:
         if not isinstance(func['parameters'], dict):
             raise ValueError("expected a dictionary")
         for param, value in func['parameters'].items():
-            ...
+            if not isinstance(value, dict):
+                raise ValueError(f"parameter '{param}' must be a dictionary")
+            if 'type' not in value:
+                raise ValueError(f"parameter '{param}' missing 'type' field")
+            if value['type'] not in valid_types:
+                raise ValueError(f"parameter '{param}' has unsupported type "
+                                 f"'{value['type']}'")
     return data
 
 
