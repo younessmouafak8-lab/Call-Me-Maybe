@@ -43,13 +43,16 @@ def get_name(token: str):
 
 def complete_parameters(parameters: dict, name):
     params = parameters[name]
+    prms = []
     for param in params.keys():
         param_type = params[param]["type"]
         if param_type == "string":
             string = f'"{param}": "'
         else:
             string = f'"{param}":'
-        yield (param, string, param_type)
+        prms.append((param, string, param_type))
+
+    return prms
 
 
 def valide_ids(functions, vocabulary):
@@ -66,20 +69,20 @@ def valide_ids(functions, vocabulary):
 
     number_ids = set()
     for id, token in vocabulary.items():
-        if token and all(c in "0123456789." for c in token):
+        if token and all(c in "0123456789.," for c in token):
             number_ids.add(int(id))
 
     integer_ids = set()
     for id, token in vocabulary.items():
-        if token and all(c in "0123456789" for c in token):
+        if token and all(c in "0123456789," for c in token):
             integer_ids.add(int(id))
 
-    end_ids = set()
+    boolean_id = []
     for id, token in vocabulary.items():
-        if token in (',', '}'):
-            end_ids.add(int(id))
+        if token and all(c in "TrueFalse" for c in token):
+            boolean_id.append(int(id))
 
-    return (name_ids, number_ids, integer_ids, end_ids)
+    return (name_ids, number_ids, integer_ids)
 
 
 def check_this(logits, ids):
@@ -102,7 +105,7 @@ def main():
     vocabulary = {value: key for key, value in vocabulary.items()}
     start = time()
     output = []
-    name_ids, number_ids, integer_ids, end_ids = valide_ids(functions, vocabulary)
+    name_ids, number_ids, integer_ids = valide_ids(functions, vocabulary)
     static_part = ' "parameters": {'
     static_ids = m.encode(static_part).tolist()[0]
     for prompt in prompts:
@@ -114,7 +117,6 @@ def main():
         dic = {"prompt": prompt}
         parameters_dic = {}
         param_type = ""
-        number_complete = False
         param_value = ""
         while 1:
             logits = m.get_logits_from_input_ids(ids)
@@ -123,17 +125,7 @@ def main():
                 check_this(copy, name_ids)
             elif (name_generated and param_generated and
                     param_type == "number" and not param_saved):
-                if not number_complete:
-                    try:
-                        float(param_value)
-                        number_complete = True
-                    except ValueError:
-                        pass
-                if not number_complete:
-                    check_this(copy, number_ids)
-                else:
-                    check_this(copy, end_ids)
-
+                check_this(copy, number_ids)
             elif (name_generated and param_generated and
                     param_type == "integer" and not param_saved):
                 check_this(copy, integer_ids)
@@ -154,35 +146,38 @@ def main():
                     prm = complete_parameters(params, name)
                     param_generated = True
                     param_value = ""
-                    try:
-                        param_name, temp, param_type = next(prm)
-                        number_complete = False
-                        ids += m.encode(temp).tolist()[0]
-                        string += temp
-                    except StopIteration:
-                        pass
+                    param_name, temp, param_type = prm.pop(0)
+                    ids += m.encode(temp).tolist()[0]
+                    string += temp
                 elif not param_saved and (',' in value or '}' in value):
-                    try:
-                        if param_value and param_type == "number":
-                            param_value = float(param_value)
-                        elif param_value and param_type == "integer":
-                            param_value = int(param_value)
-                        else:
-                            param_value += value
-                            param_value = param_value.split('"')[0]
-                        parameters_dic.update({param_name: param_value})
-                        param_value = ""
-                        param_name, temp, param_type = next(prm)
-                        number_complete = False
+                    if param_value and param_type == "number":
+                        param_value = float(param_value)
+                    elif param_value and param_type == "integer":
+                        param_value = int(param_value)
+                    else:
+                        param_value += value
+                        param_value = param_value.split('"')[0]
+                    parameters_dic.update({param_name: param_value})
+                    param_value = ""
+                    if prm:
+                        param_name, temp, param_type = prm.pop(0)
                         ids += m.encode(temp).tolist()[0]
                         string += temp
-                    except StopIteration:
+                    else:
                         param_saved = True
                 elif param_generated and not param_saved:
                     param_value += value
                 if param_saved:
+                    string = string.rstrip(',')
                     dic.update({"parameters": parameters_dic})
+                    if string.endswith('"}'):
+                        ids += m.encode("}").tolist()[0]
+                        string += "}"
+                    elif param_type != "string":
+                        ids += m.encode("}}").tolist()[0]
+                        string += "}}"
 
+            print(value)
             print(string)
             if param_saved:
                 break
