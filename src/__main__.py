@@ -82,13 +82,38 @@ def valide_ids(functions, vocabulary):
         if token and all(c in "TrueFalse" for c in token):
             boolean_id.append(int(id))
 
-    return (name_ids, number_ids, integer_ids)
+    dot_ids = set()
+    for id, token in vocabulary.items():
+        if token.strip() == '.':
+            dot_ids.add(int(id))
+
+    comma_ids = set()
+    for id, token in vocabulary.items():
+        if token.strip() == ',':
+            comma_ids.add(int(id))
+
+    return (name_ids, number_ids, integer_ids, boolean_id, dot_ids, comma_ids)
 
 
 def check_this(logits, ids):
     for i in range(len(logits)):
         if i not in ids:
             logits[i] = -np.inf
+
+
+def check_value(string, value):
+    if not value:
+        return False
+
+    start = string.find(value)
+    if start == -1:
+        return False
+
+    end = start + len(value)
+
+    if end == len(string):
+        return True
+    return not string[end].isdigit()
 
 
 def main():
@@ -105,7 +130,7 @@ def main():
     vocabulary = {value: key for key, value in vocabulary.items()}
     start = time()
     output = []
-    name_ids, number_ids, integer_ids = valide_ids(functions, vocabulary)
+    name_ids, number_ids, integer_ids, boolean_ids, dot_ids, comma_ids = valide_ids(functions, vocabulary)
     static_part = ' "parameters": {'
     static_ids = m.encode(static_part).tolist()[0]
     for prompt in prompts:
@@ -126,9 +151,20 @@ def main():
             elif (name_generated and param_generated and
                     param_type == "number" and not param_saved):
                 check_this(copy, number_ids)
+                if check_value(string, param_value) and '.' not in param_value:
+                    check_this(copy, dot_ids)
+                if '.' in param_value and param_value.endswith("0"):
+                    check_this(copy, comma_ids)
+
             elif (name_generated and param_generated and
                     param_type == "integer" and not param_saved):
                 check_this(copy, integer_ids)
+            elif (name_generated and param_generated and
+                    param_type == "boolean" and not param_saved):
+                if not ("True" in param_value or "False" in param_value):
+                    check_this(copy, boolean_ids)
+                elif "," not in param_value:
+                    check_this(copy, comma_ids)
             next_token_id = int(np.argmax(copy))
             ids.append(next_token_id)
             value = m.decode(next_token_id)
@@ -154,6 +190,8 @@ def main():
                         param_value = float(param_value)
                     elif param_value and param_type == "integer":
                         param_value = int(param_value)
+                    elif param_value and param_type == "boolean":
+                        param_value = bool(param_value)
                     else:
                         param_value += value
                         param_value = param_value.split('"')[0]
@@ -167,6 +205,12 @@ def main():
                         param_saved = True
                 elif param_generated and not param_saved:
                     param_value += value
+                if len(prm) == 0 and check_value(string, param_value) and\
+                        param_type == "integer":
+                    # print(param_value, param_saved)
+                    param_value = int(param_value)
+                    parameters_dic.update({param_name: param_value})
+                    param_saved = True
                 if param_saved:
                     string = string.rstrip(',')
                     dic.update({"parameters": parameters_dic})
@@ -177,7 +221,6 @@ def main():
                         ids += m.encode("}}").tolist()[0]
                         string += "}}"
 
-            print(value)
             print(string)
             if param_saved:
                 break
