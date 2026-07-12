@@ -4,10 +4,10 @@
     "description": "Add two numbers together and return their sum.",
     "parameters": {
       "a": {
-        "type": "boolean"
+        "type": "number"
       },
       "b": {
-        "type": "boolean"
+        "type": "number"
       }
     },
     "returns": {

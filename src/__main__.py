@@ -1,5 +1,4 @@
 from .parsing import parsing
-from llm_sdk.llm_sdk import Small_LLM_Model as model
 import json
 import numpy as np
 from time import time
@@ -28,17 +27,6 @@ def prompt_builder(prompt, functions):
     {prompt}
     JSON:
     """
-
-
-def get_name(token: str):
-    if not hasattr(get_name, "name"):
-        get_name.name = ""
-    if '",' not in token:
-        get_name.name += token
-        return None
-    result = get_name.name
-    get_name.name = ""
-    return result
 
 
 def complete_parameters(parameters: dict, name):
@@ -123,6 +111,7 @@ def main():
     prompts, functions, output_file = p
     func_def = [f"{func['name']}: {func['parameters']}" for func in functions]
     params = {func["name"]: func["parameters"] for func in functions}
+    from llm_sdk.llm_sdk import Small_LLM_Model as model
     m = model()
     vocabulary_path = m.get_path_to_vocab_file()
     with open(vocabulary_path, "r") as f:
@@ -133,7 +122,7 @@ def main():
     name_ids, number_ids, integer_ids, boolean_ids, dot_ids, comma_ids = valide_ids(functions, vocabulary)
     static_part = ' "parameters": {'
     static_ids = m.encode(static_part).tolist()[0]
-    for prompt in prompts:
+    for prompt in prompts[:1]:
         string = f'{{"prompt": "{prompt}", "name": "'
         ids = m.encode(prompt_builder(prompt, func_def) + (string)).tolist()[0]
         name_generated = False
@@ -143,6 +132,7 @@ def main():
         parameters_dic = {}
         param_type = ""
         param_value = ""
+        name = ""
         while 1:
             logits = m.get_logits_from_input_ids(ids)
             copy = logits.copy()
@@ -170,10 +160,11 @@ def main():
             value = m.decode(next_token_id)
             string += value
             if not name_generated:
-                name = get_name(value)
                 if '",' in value:
                     name_generated = True
                     dic.update({"name": name})
+                else:
+                    name += value
             if name_generated and "parameters" not in string:
                 ids += static_ids
                 string += static_part
@@ -207,7 +198,6 @@ def main():
                     param_value += value
                 if len(prm) == 0 and check_value(string, param_value) and\
                         param_type == "integer":
-                    # print(param_value, param_saved)
                     param_value = int(param_value)
                     parameters_dic.update({param_name: param_value})
                     param_saved = True
@@ -224,20 +214,13 @@ def main():
             print(string)
             if param_saved:
                 break
-            try:
-                if string.endswith("\n"):
-                    break
-                json.loads(string)
-                break
-            except json.JSONDecodeError:
-                pass
         print(dic)
         print("###############################################")
         output.append(dic)
     end = time()
     print(end - start)
     with open(output_file, "w") as f:
-        json.dump(output, f)
+        json.dump(output, f, indent=4)
 
 
 try:
