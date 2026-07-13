@@ -5,6 +5,13 @@ requires-python = ">=3.10"
 dependencies = [
     "pydantic",
     "numpy",
-    "torch",
-    "transformers",
+    "llm-sdk",
 ]
+
+[tool.uv.workspace]
+members = [
+    "llm_sdk",
+]
+
+[tool.uv.sources]
+llm-sdk = { workspace = true }

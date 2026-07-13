@@ -9,9 +9,12 @@ class Prompt(BaseModel):
 
 def get_prompts(file: str) -> list[Prompt]:
     with open(file, "r") as f:
-        data = json.load(f)
-    if not isinstance(data, list):
-        raise ValueError("expected a list")
+        try:
+            data = json.load(f)
+        except json.decoder.JSONDecodeError:
+            raise ValueError("empty json file")
+    if not isinstance(data, list) or not data:
+        raise ValueError("expected a non-empty list")
     prompts = []
     for i, item in enumerate(data):
         if not isinstance(item, dict):
@@ -26,8 +29,11 @@ def get_prompts(file: str) -> list[Prompt]:
 def get_functions(file: str) -> list[dict]:
     valid_types = {"number", "string", "boolean", "integer"}
     with open(file, "r") as f:
-        data = json.load(f)
-    if not isinstance(data, list):
+        try:
+            data = json.load(f)
+        except json.decoder.JSONDecodeError:
+            raise ValueError("empty json file")
+    if not isinstance(data, list) or not data:
         raise ValueError("expected a list")
     for func in data:
         if not isinstance(func, dict):
@@ -35,9 +41,14 @@ def get_functions(file: str) -> list[dict]:
         if 'name' not in func or 'description' not in func or \
                 'parameters' not in func:
             raise ValueError("missing key")
+        if ' ' in func["name"] or \
+                not len(func["name"]):
+            raise ValueError("invalid function name")
         if not isinstance(func['parameters'], dict):
             raise ValueError("expected a dictionary")
         for param, value in func['parameters'].items():
+            if not len(param):
+                raise ValueError(f"invalid parameter '{param}'")
             if not isinstance(value, dict):
                 raise ValueError(f"parameter '{param}' must be a dictionary")
             if 'type' not in value:

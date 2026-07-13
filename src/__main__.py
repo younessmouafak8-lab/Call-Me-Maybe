@@ -51,18 +51,19 @@ def valide_ids(functions, vocabulary):
     allowed_chars.add('"')
     allowed_chars.add(',')
     name_ids = set()
+
     for id, token in vocabulary.items():
         if token and all(c in allowed_chars for c in token):
             name_ids.add(int(id))
 
     number_ids = set()
     for id, token in vocabulary.items():
-        if token and all(c in "0123456789.," for c in token):
+        if token and all(c in "0123456789,." for c in token):
             number_ids.add(int(id))
 
     integer_ids = set()
     for id, token in vocabulary.items():
-        if token and all(c in "0123456789," for c in token):
+        if token and all(c in "0123456789,}" for c in token):
             integer_ids.add(int(id))
 
     boolean_id = []
@@ -89,21 +90,6 @@ def check_this(logits, ids):
             logits[i] = -np.inf
 
 
-def check_value(string, value):
-    if not value:
-        return False
-
-    start = string.find(value)
-    if start == -1:
-        return False
-
-    end = start + len(value)
-
-    if end == len(string):
-        return True
-    return not string[end].isdigit()
-
-
 def main():
     p = parsing()
     if not p:
@@ -111,7 +97,7 @@ def main():
     prompts, functions, output_file = p
     func_def = [f"{func['name']}: {func['parameters']}" for func in functions]
     params = {func["name"]: func["parameters"] for func in functions}
-    from llm_sdk.llm_sdk import Small_LLM_Model as model
+    from llm_sdk import Small_LLM_Model as model
     m = model()
     vocabulary_path = m.get_path_to_vocab_file()
     with open(vocabulary_path, "r") as f:
@@ -133,6 +119,8 @@ def main():
         param_type = ""
         param_value = ""
         name = ""
+        value = ""
+        prm = []
         while 1:
             logits = m.get_logits_from_input_ids(ids)
             copy = logits.copy()
@@ -140,10 +128,12 @@ def main():
                 check_this(copy, name_ids)
             elif (name_generated and param_generated and
                     param_type == "number" and not param_saved):
+                # if not param_value:
                 check_this(copy, number_ids)
-                if check_value(string, param_value) and '.' not in param_value:
-                    check_this(copy, dot_ids)
-                if '.' in param_value and param_value.endswith("0"):
+                # if paraand '.' not in param_value:
+                #     check_this(copy, dot_ids)
+                if '.' in param_value and param_value.endswith("0") and \
+                        not len(prm):
                     check_this(copy, comma_ids)
 
             elif (name_generated and param_generated and
@@ -171,18 +161,24 @@ def main():
             if name_generated and "parameters" in string:
                 if not param_generated:
                     prm = complete_parameters(params, name)
+                    if not prm:
+                        param_saved = True
                     param_generated = True
                     param_value = ""
-                    param_name, temp, param_type = prm.pop(0)
-                    ids += m.encode(temp).tolist()[0]
-                    string += temp
+                    if prm:
+                        param_name, temp, param_type = prm.pop(0)
+                        ids += m.encode(temp).tolist()[0]
+                        string += temp
                 elif not param_saved and (',' in value or '}' in value):
                     if param_value and param_type == "number":
                         param_value = float(param_value)
                     elif param_value and param_type == "integer":
                         param_value = int(param_value)
                     elif param_value and param_type == "boolean":
-                        param_value = bool(param_value)
+                        if param_value == "False":
+                            param_value = bool(0)
+                        else:
+                            param_value = bool(1)
                     else:
                         param_value += value
                         param_value = param_value.split('"')[0]
@@ -196,21 +192,23 @@ def main():
                         param_saved = True
                 elif param_generated and not param_saved:
                     param_value += value
-                if len(prm) == 0 and check_value(string, param_value) and\
-                        param_type == "integer":
-                    param_value = int(param_value)
-                    parameters_dic.update({param_name: param_value})
-                    param_saved = True
+                # if not len(prm) and check_value(string, param_value) and\
+                #         param_type == "integer":
+                #     param_value = int(param_value)
+                #     parameters_dic.update({param_name: param_value})
+                #     param_saved = True
                 if param_saved:
                     string = string.rstrip(',')
                     dic.update({"parameters": parameters_dic})
                     if string.endswith('"}'):
                         ids += m.encode("}").tolist()[0]
                         string += "}"
-                    elif param_type != "string":
+                    if not string.strip().endswith('}}'):
+                        print("hh")
                         ids += m.encode("}}").tolist()[0]
                         string += "}}"
 
+            print(value)
             print(string)
             if param_saved:
                 break
