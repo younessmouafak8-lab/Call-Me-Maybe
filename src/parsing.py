@@ -12,7 +12,7 @@ def get_prompts(file: str) -> list[Prompt]:
         try:
             data = json.load(f)
         except json.decoder.JSONDecodeError:
-            raise ValueError("empty json file")
+            raise ValueError("invalid json file")
     if not isinstance(data, list) or not data:
         raise ValueError("expected a non-empty list")
     prompts = []
@@ -32,7 +32,7 @@ def get_functions(file: str) -> list[dict]:
         try:
             data = json.load(f)
         except json.decoder.JSONDecodeError:
-            raise ValueError("empty json file")
+            raise ValueError("invalid json file")
     if not isinstance(data, list) or not data:
         raise ValueError("expected a list")
     for func in data:
@@ -68,11 +68,13 @@ def parsing() -> tuple | list:
                            default="data/input/functions_definition.json")
         parse.add_argument("--output",
                            default="data/output/function_calling_results.json")
+        parse.add_argument("--model", default="Qwen/Qwen3-0.6B")
         args = parse.parse_args()
         prompts = get_prompts(args.input)
         functions = get_functions(args.functions_definition)
         output_file = args.output
-        return (prompts, functions, output_file)
+        model = args.model
+        return (prompts, functions, output_file, model)
     except FileNotFoundError as e:
         print(f"Error: {e}")
         return []

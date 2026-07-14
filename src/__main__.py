@@ -25,7 +25,6 @@ def prompt_builder(prompt, functions):
 
     User Input:
     {prompt}
-    JSON:
     """
 
 
@@ -44,17 +43,6 @@ def complete_parameters(parameters: dict, name):
 
 
 def valide_ids(functions, vocabulary):
-    allowed_chars = set()
-    for func in functions:
-        for c in func['name']:
-            allowed_chars.add(c)
-    allowed_chars.add('"')
-    allowed_chars.add(',')
-    name_ids = set()
-
-    for id, token in vocabulary.items():
-        if token and all(c in allowed_chars for c in token):
-            name_ids.add(int(id))
 
     number_ids = set()
     for id, token in vocabulary.items():
@@ -71,17 +59,14 @@ def valide_ids(functions, vocabulary):
         if token and all(c in "TrueFalse" for c in token):
             boolean_id.append(int(id))
 
-    # dot_ids = set()
-    # for id, token in vocabulary.items():
-    #     if token.strip() == '.':
-    #         dot_ids.add(int(id))
+
 
     comma_ids = set()
     for id, token in vocabulary.items():
         if token.strip() == ',':
             comma_ids.add(int(id))
 
-    return (name_ids, number_ids, integer_ids, boolean_id, comma_ids)
+    return (number_ids, integer_ids, boolean_id, comma_ids)
 
 
 def check_this(logits, ids):
@@ -106,24 +91,30 @@ def convert_value(value, param_type, token):
         result = value.split('"')[0]
     return result
 
+def validate_name(ids, index, gen_ids):
+    ids = [lst for lst in ids if lst[:index] == gen_ids]
+    return [i[index] for i in ids]
+
+
 def main():
     p = parsing()
     if not p:
         return
-    prompts, functions, output_file = p
+    prompts, functions, output_file, model_name = p
     func_def = [f"{func['name']}: {func['parameters']}" for func in functions]
     params = {func["name"]: func["parameters"] for func in functions}
     from llm_sdk import Small_LLM_Model as model
-    m = model("Qwen/Qwen2.5-Coder-0.5B")
+    m = model(model_name)
     vocabulary_path = m.get_path_to_vocab_file()
     with open(vocabulary_path, "r") as f:
         vocabulary = json.load(f)
     vocabulary = {value: key for key, value in vocabulary.items()}
     start = time()
     output = []
-    name_ids, number_ids, integer_ids, boolean_ids, comma_ids = valide_ids(functions, vocabulary)
+    number_ids, integer_ids, boolean_ids, comma_ids = valide_ids(functions, vocabulary)
     static_part = ' "parameters": {'
     static_ids = m.encode(static_part).tolist()[0]
+    name_ids = [m.encode(func["name"] + '",').tolist()[0] for func in functions]
     for prompt in prompts:
         string = f'{{"prompt": "{prompt}", "name": "'
         ids = m.encode(prompt_builder(prompt, func_def) + (string)).tolist()[0]
@@ -138,17 +129,22 @@ def main():
         value = ""
         prm = []
         tokens_generated = 0
+        i = 0
+        gen_ids = []
         while 1:
             logits = m.get_logits_from_input_ids(ids)
             copy = logits.copy()
             if not name_generated:
-                check_this(copy, name_ids)
+                n_ids = validate_name(name_ids, i, gen_ids)
+                check_this(copy, n_ids)
+                i += 1
             elif (name_generated and param_generated and
                     param_type == "number" and not param_saved):
-                check_this(copy, number_ids)
+                if prm:
+                    check_this(copy, number_ids)
                 if '.' in param_value and param_value.endswith("0") and \
-                        not len(prm):
-                    check_this(copy, comma_ids)
+                        not prm:
+                    check_this(copy, m.encode('}}').tolist()[0])
 
             elif (name_generated and param_generated and
                     param_type == "integer" and not param_saved):
@@ -169,6 +165,7 @@ def main():
                     dic.update({"name": name})
                 else:
                     name += value
+                    gen_ids.append(next_token_id)
             if name_generated and "parameters" not in string:
                 ids += static_ids
                 string += static_part
@@ -198,7 +195,7 @@ def main():
                 elif param_generated and not param_saved:
                     param_value += value
                 if param_saved:
-                    string = string.rstrip(',')
+                    # string = string.rstrip(',')
                     dic.update({"parameters": parameters_dic})
                     if string.endswith('"}'):
                         ids += m.encode("}").tolist()[0]
@@ -209,7 +206,7 @@ def main():
                 if tokens_generated > len(prompt) + 10:
                     tokens_generated = 0
                     if not len(prm):
-                        convert_value(param_value, param_type, value)
+                        param_value = convert_value(param_value, param_type, value)
                         parameters_dic.update({param_name: param_value})
                         dic.update({"parameters": parameters_dic})
                         ids += m.encode("}}").tolist()[0]
@@ -219,7 +216,7 @@ def main():
                         ids += m.encode(",").tolist()[0]
                         string += ","
 
-
+            print(value)
             print(string)
             if param_saved:
                 break
@@ -232,7 +229,7 @@ def main():
         json.dump(output, f, indent=4)
 
 
-try:
-    main()
-except Exception as e:
-    print(f"Error: {e}")
+# try:
+main()
+# except Exception as e:
+#     print(f"Error: {e}")
