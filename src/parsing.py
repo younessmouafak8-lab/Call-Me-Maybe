@@ -42,7 +42,7 @@ def get_functions(file: str) -> list[dict]:
                 'parameters' not in func:
             raise ValueError("missing key")
         if ' ' in func["name"] or \
-                not len(func["name"]):
+                not len(func["name"]) or '"' in func["name"] or ',' in func["name"]:
             raise ValueError("invalid function name")
         if not isinstance(func['parameters'], dict):
             raise ValueError("expected a dictionary")

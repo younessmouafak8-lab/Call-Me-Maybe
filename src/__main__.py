@@ -195,7 +195,6 @@ def main():
                 elif param_generated and not param_saved:
                     param_value += value
                 if param_saved:
-                    # string = string.rstrip(',')
                     dic.update({"parameters": parameters_dic})
                     if string.endswith('"}'):
                         ids += m.encode("}").tolist()[0]
@@ -216,7 +215,7 @@ def main():
                         ids += m.encode(",").tolist()[0]
                         string += ","
 
-            print(value)
+            # print(value)
             print(string)
             if param_saved:
                 break
