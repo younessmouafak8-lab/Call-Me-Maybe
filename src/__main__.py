@@ -2,9 +2,10 @@ from .parsing import parsing
 import json
 import numpy as np
 from time import time
+from typing import Union
 
 
-def prompt_builder(prompt, functions):
+def prompt_builder(prompt: str, functions: list) -> str:
     return f"""
     You are a function-calling assistant.
     Your task is to analyze the user's request and return a single JSON object\
@@ -28,7 +29,7 @@ def prompt_builder(prompt, functions):
     """
 
 
-def complete_parameters(parameters: dict, name):
+def complete_parameters(parameters: dict, name: str) -> list:
     params = parameters[name]
     prms = []
     for param in params.keys():
@@ -42,7 +43,7 @@ def complete_parameters(parameters: dict, name):
     return prms
 
 
-def valide_ids(functions, vocabulary):
+def valide_ids(vocabulary: dict) -> tuple:
 
     number_ids = set()
     for id, token in vocabulary.items():
@@ -54,29 +55,23 @@ def valide_ids(functions, vocabulary):
         if token and all(c in "0123456789,}" for c in token):
             integer_ids.add(int(id))
 
-    boolean_id = []
+    boolean_id = set()
     for id, token in vocabulary.items():
         if token and all(c in "TrueFalse" for c in token):
-            boolean_id.append(int(id))
+            boolean_id.add(int(id))
+
+    return (number_ids, integer_ids, boolean_id)
 
 
-
-    comma_ids = set()
-    for id, token in vocabulary.items():
-        if token.strip() == ',':
-            comma_ids.add(int(id))
-
-    return (number_ids, integer_ids, boolean_id, comma_ids)
-
-
-def check_this(logits, ids):
+def check_this(logits: list, ids: list) -> None:
     for i in range(len(logits)):
         if i not in ids:
             logits[i] = -np.inf
 
 
-def convert_value(value, param_type, token):
-    result = 0
+def convert_value(value: str, param_type: str,
+                  token: str) -> (float | int | bool | str):
+    result: Union[float | int | bool | str]
     if value and param_type == "number":
         result = float(value)
     elif value and param_type == "integer":
@@ -91,19 +86,20 @@ def convert_value(value, param_type, token):
         result = value.split('"')[0]
     return result
 
-def validate_name(ids, index, gen_ids):
+
+def validate_name(ids: list, index: int, gen_ids: list) -> list:
     ids = [lst for lst in ids if lst[:index] == gen_ids]
     return [i[index] for i in ids]
 
 
-def main():
+def main() -> None:
     p = parsing()
     if not p:
         return
     prompts, functions, output_file, model_name = p
     func_def = [f"{func['name']}: {func['parameters']}" for func in functions]
     params = {func["name"]: func["parameters"] for func in functions}
-    from llm_sdk import Small_LLM_Model as model
+    from llm_sdk import Small_LLM_Model as model  # type: ignore[attr-defined]
     m = model(model_name)
     vocabulary_path = m.get_path_to_vocab_file()
     with open(vocabulary_path, "r") as f:
@@ -111,10 +107,11 @@ def main():
     vocabulary = {value: key for key, value in vocabulary.items()}
     start = time()
     output = []
-    number_ids, integer_ids, boolean_ids, comma_ids = valide_ids(functions, vocabulary)
+    number_ids, integer_ids, boolean_ids = valide_ids(vocabulary)
     static_part = ' "parameters": {'
     static_ids = m.encode(static_part).tolist()[0]
-    name_ids = [m.encode(func["name"] + '",').tolist()[0] for func in functions]
+    name_ids = [m.encode(func["name"] + '",').tolist()[0]
+                for func in functions]
     for prompt in prompts:
         string = f'{{"prompt": "{prompt}", "name": "'
         ids = m.encode(prompt_builder(prompt, func_def) + (string)).tolist()[0]
@@ -124,13 +121,13 @@ def main():
         dic = {"prompt": prompt}
         parameters_dic = {}
         param_type = ""
-        param_value = ""
+        param_value: str = ""
         name = ""
         value = ""
-        prm = []
+        prm: list[tuple] = []
         tokens_generated = 0
         i = 0
-        gen_ids = []
+        gen_ids: list[int] = []
         while 1:
             logits = m.get_logits_from_input_ids(ids)
             copy = logits.copy()
@@ -154,7 +151,7 @@ def main():
                 if not ("True" in param_value or "False" in param_value):
                     check_this(copy, boolean_ids)
                 elif "," not in param_value:
-                    check_this(copy, comma_ids)
+                    check_this(copy, m.encode(',').tolist()[0])
             next_token_id = int(np.argmax(copy))
             ids.append(next_token_id)
             value = m.decode(next_token_id)
@@ -183,8 +180,8 @@ def main():
                         string += temp
                 elif not param_saved and (',' in value or '}' in value):
                     tokens_generated = 0
-                    param_value = convert_value(param_value, param_type, value)
-                    parameters_dic.update({param_name: param_value})
+                    result = convert_value(param_value, param_type, value)
+                    parameters_dic.update({param_name: result})
                     param_value = ""
                     if prm:
                         param_name, temp, param_type = prm.pop(0)
@@ -205,8 +202,9 @@ def main():
                 if tokens_generated > len(prompt) + 10:
                     tokens_generated = 0
                     if not len(prm):
-                        param_value = convert_value(param_value, param_type, value)
-                        parameters_dic.update({param_name: param_value})
+                        result = convert_value(param_value,
+                                               param_type, value)
+                        parameters_dic.update({param_name: result})
                         dic.update({"parameters": parameters_dic})
                         ids += m.encode("}}").tolist()[0]
                         string += "}}"
@@ -228,7 +226,7 @@ def main():
         json.dump(output, f, indent=4)
 
 
-# try:
-main()
-# except Exception as e:
-#     print(f"Error: {e}")
+try:
+    main()
+except Exception as e:
+    print(f"Error: {e}")
