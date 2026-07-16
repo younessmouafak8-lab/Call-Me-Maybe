@@ -21,8 +21,8 @@ def prompt_builder(prompt: str, functions: list) -> str:
     Input:
     What is the sum of 2 and 3?
     Output:
-    {{"prompt": "What is the sum of 2 and 3?", "name": "fn_add_numbers", \
-        "parameters": {{"a": 2.0, "b": 3.0}}}}
+    {{"prompt": "What is the sum of 14 and 15?", "name": "fn_add_numbers", \
+        "parameters": {{"a": 14.0, "b": 15.0}}}}
 
     User Input:
     {prompt}
@@ -47,12 +47,12 @@ def valide_ids(vocabulary: dict) -> tuple:
 
     number_ids = set()
     for id, token in vocabulary.items():
-        if token and all(c in "0123456789,." for c in token):
+        if token and all(c in "0123456789,.+-" for c in token):
             number_ids.add(int(id))
 
     integer_ids = set()
     for id, token in vocabulary.items():
-        if token and all(c in "0123456789,}" for c in token):
+        if token and all(c in "0123456789,}+-" for c in token):
             integer_ids.add(int(id))
 
     boolean_id = set()
@@ -71,19 +71,23 @@ def check_this(logits: list, ids: list) -> None:
 
 def convert_value(value: str, param_type: str,
                   token: str) -> (float | int | bool | str):
-    result: Union[float | int | bool | str]
-    if value and param_type == "number":
-        result = float(value)
-    elif value and param_type == "integer":
-        result = int(value)
-    elif value and param_type == "boolean":
-        if value == "False":
-            result = bool(0)
+    try:
+        result: Union[float | int | bool | str]
+        if value and param_type == "number":
+            result = float(value)
+        elif value and param_type == "integer":
+            result = int(value)
+        elif value and param_type == "boolean":
+            if value == "False":
+                result = bool(0)
+            else:
+                result = bool(1)
         else:
-            result = bool(1)
-    else:
-        value += token
-        result = value.split('"')[0]
+            value += token
+            result = value.split('"')[0]
+        return result
+    except Exception:
+        print("try entering a valid value next time :)")
     return result
 
 
@@ -139,9 +143,6 @@ def main() -> None:
                     param_type == "number" and not param_saved):
                 if prm:
                     check_this(copy, number_ids)
-                if '.' in param_value and param_value.endswith("0") and \
-                        not prm:
-                    check_this(copy, m.encode('}}').tolist()[0])
 
             elif (name_generated and param_generated and
                     param_type == "integer" and not param_saved):
