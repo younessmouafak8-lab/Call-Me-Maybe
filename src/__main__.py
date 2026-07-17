@@ -101,7 +101,7 @@ def main() -> None:
     if not p:
         return
     prompts, functions, output_file, model_name = p
-    func_def = [f"{func['name']}: {func['parameters']}" for func in functions]
+    func_def = [f"{func['name']}: {func['parameters']}, {func['description']}" for func in functions]
     params = {func["name"]: func["parameters"] for func in functions}
     from llm_sdk import Small_LLM_Model as model  # type: ignore[attr-defined]
     m = model(model_name)
@@ -137,6 +137,7 @@ def main() -> None:
             copy = logits.copy()
             if not name_generated:
                 n_ids = validate_name(name_ids, i, gen_ids)
+                print(f"{n_ids}, {m.decode(n_ids)}, {value}")
                 check_this(copy, n_ids)
                 i += 1
             elif (name_generated and param_generated and
@@ -200,7 +201,7 @@ def main() -> None:
                     elif not string.strip().endswith('}}') and "}" not in string:
                         ids += m.encode("}}").tolist()[0]
                         string += "}}"
-                    else:
+                    elif "}}" not in string:
                         ids += m.encode("}").tolist()[0]
                         string += "}"
                 if tokens_generated > len(prompt) + 10:
@@ -217,7 +218,7 @@ def main() -> None:
                         ids += m.encode(",").tolist()[0]
                         string += ","
 
-            print(value)
+            # print(value)
             print(string)
             if param_saved:
                 break
