@@ -1,0 +1,10 @@
+[
+    {
+        "prompt": "What is the sum of 5.2 and 70000000000?",
+        "name": "fn_add_numbers",
+        "parameters": {
+            "a": 5.2,
+            "b": 70000000000
+        }
+    }
+]

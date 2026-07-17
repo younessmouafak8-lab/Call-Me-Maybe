@@ -197,9 +197,12 @@ def main() -> None:
                     if string.endswith('"}'):
                         ids += m.encode("}").tolist()[0]
                         string += "}"
-                    if not string.strip().endswith('}}'):
+                    elif not string.strip().endswith('}}') and "}" not in string:
                         ids += m.encode("}}").tolist()[0]
                         string += "}}"
+                    else:
+                        ids += m.encode("}").tolist()[0]
+                        string += "}"
                 if tokens_generated > len(prompt) + 10:
                     tokens_generated = 0
                     if not len(prm):
@@ -214,7 +217,7 @@ def main() -> None:
                         ids += m.encode(",").tolist()[0]
                         string += ","
 
-            # print(value)
+            print(value)
             print(string)
             if param_saved:
                 break

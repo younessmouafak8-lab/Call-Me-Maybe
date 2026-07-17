@@ -1,6 +1,6 @@
 INPUT = "data/input/function_calling_tests.json"
 FUNC_DEF = "data/input/functions_definition.json"
-OUTPUT = "data/output/function_calls.json"
+OUTPUT = "data/output/function_calling_results.json"
 MODEL = "Qwen/Qwen2.5-Coder-0.5B"
 
 install:

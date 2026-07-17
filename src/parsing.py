@@ -75,7 +75,7 @@ def parsing() -> tuple | list:
         parse.add_argument("--functions_definition",
                            default="data/input/functions_definition.json")
         parse.add_argument("--output",
-                           default="data/output/function_calling_results.txt")
+                           default="data/output/function_calling_results.json")
         parse.add_argument("--model", default="Qwen/Qwen3-0.6B")
         args = parse.parse_args()
         prompts = get_prompts(args.input)
