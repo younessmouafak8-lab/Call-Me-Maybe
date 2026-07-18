@@ -1,9 +1,33 @@
+"""Input parsing and validation utilities.
+
+This module handles CLI argument parsing and validation of the two input
+JSON files (prompts and function definitions) required by the
+function-calling pipeline, ensuring both are well-formed before generation
+begins.
+"""
+
 import json
 import argparse
 import os
 
 
 def check_keys(data: list) -> dict:
+    """Build a dict from JSON key/value pairs while rejecting duplicate keys.
+
+    Intended for use as the `object_pairs_hook` of `json.load`, so that a
+    JSON object with a repeated key raises an error instead of silently
+    keeping only the last occurrence.
+
+    Args:
+        data: List of (key, value) pairs as produced by the JSON decoder
+            for a single object.
+
+    Returns:
+        A dict built from `data`.
+
+    Raises:
+        ValueError: If the same key appears more than once in `data`.
+    """
     lst = set()
     for key, _ in data:
         if key in lst:
@@ -14,6 +38,23 @@ def check_keys(data: list) -> dict:
 
 
 def get_prompts(file: str) -> list[str]:
+    """Load and validate the list of natural-language prompts.
+
+    Reads the given JSON file, expecting a non-empty list of objects each
+    containing exactly one key, "prompt", mapped to a non-empty string.
+
+    Args:
+        file: Path to the JSON file containing the prompts.
+
+    Returns:
+        The list of prompt strings, in file order.
+
+    Raises:
+        ValueError: If the file is not valid JSON, is not a non-empty
+            list, contains items that aren't dictionaries, contains extra
+            keys, is missing the "prompt" key, or has a "prompt" value that
+            is not a non-empty string.
+    """
     with open(file, "r") as f:
         try:
             data = json.load(f, object_pairs_hook=check_keys)
@@ -40,6 +81,27 @@ def get_prompts(file: str) -> list[str]:
 
 
 def get_functions(file: str) -> list[dict]:
+    """Load and validate the available function definitions.
+
+    Reads the given JSON file, expecting a non-empty list of function
+    definitions. Each definition must declare exactly "name", "description",
+    "parameters", and "returns", with well-formed names, a description of
+    reasonable length, and parameter/return types restricted to
+    "number", "string", "boolean", or "integer".
+
+    Args:
+        file: Path to the JSON file containing the function definitions.
+
+    Returns:
+        The validated list of function definition dictionaries, as loaded
+        from the file.
+
+    Raises:
+        ValueError: If the file is not valid JSON, or any function
+            definition is malformed: not a dictionary, missing/extra keys,
+            invalid name or description, invalid "parameters"/"returns"
+            structure, or an unsupported parameter/return type.
+    """
     valid_types = {"number", "string", "boolean", "integer"}
     with open(file, "r") as f:
         try:
@@ -98,6 +160,23 @@ def get_functions(file: str) -> list[dict]:
 
 
 def parsing() -> tuple | list:
+    """Parse CLI arguments and load/validate all input files.
+
+    Reads the `--input`, `--functions_definition`, `--output`, and `--model`
+    command-line arguments (each with sensible defaults), validates that
+    the input/output file paths end in ".json", loads and validates the
+    prompts and function definitions, and ensures the output directory
+    exists.
+
+    Returns:
+        On success, a tuple (prompts, functions, output_file, model) where
+        `prompts` is the list of prompt strings, `functions` is the list of
+        validated function definitions, `output_file` is the path to write
+        results to, and `model` is the model name/path to use.
+        On any failure (missing file, permission error, invalid JSON/schema,
+        or any other exception), prints an error message and returns an
+        empty list instead of raising.
+    """
     try:
         parse = argparse.ArgumentParser()
         parse.add_argument("--input",

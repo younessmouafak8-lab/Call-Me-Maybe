@@ -1,3 +1,10 @@
+"""Constrained-decoding function-calling pipeline.
+
+This module drives a small LLM token-by-token to translate natural language
+prompts into structured function calls (name + typed parameters), using
+constrained decoding to guarantee valid, schema-compliant JSON output.
+"""
+
 from .parsing import parsing
 import json
 import numpy as np
@@ -6,6 +13,20 @@ from typing import Union
 
 
 def prompt_builder(prompt: str, functions: list) -> str:
+    """Build the natural-language prompt sent to the LLM.
+
+    Wraps the user's request together with the list of available function
+    signatures and a one-shot example, so the model has the context needed
+    to pick a function and format its parameters.
+
+    Args:
+        prompt: The original natural-language user input.
+        functions: List of formatted function descriptions (name,
+            parameters, description) to present to the model.
+
+    Returns:
+        The full prompt string to be tokenized and fed to the model.
+    """
     return f"""
     You are a function-calling assistant.
     Your task is to analyze the user's request and return a single JSON object\
@@ -30,6 +51,22 @@ def prompt_builder(prompt: str, functions: list) -> str:
 
 
 def complete_parameters(parameters: dict, name: str) -> list:
+    """Build the ordered list of parameters that must be generated for a function.
+
+    For the chosen function name, look up its parameter definitions and
+    prepare, for each parameter, the literal text that should be injected
+    into the generation stream just before its value (e.g. an opening
+    quote for strings, nothing extra for numbers/booleans).
+
+    Args:
+        parameters: Mapping of function name to its parameter definitions,
+            as declared in functions_definition.json.
+        name: Name of the function whose parameters should be prepared.
+
+    Returns:
+        A list of (param_name, injected_string, param_type) tuples, in the
+        order the parameters should be generated.
+    """
     params = parameters[name]
     prms = []
     for param in params.keys():
@@ -44,6 +81,21 @@ def complete_parameters(parameters: dict, name: str) -> list:
 
 
 def valide_ids(vocabulary: dict) -> tuple:
+    """Classify vocabulary token IDs by the value type they are valid for.
+
+    Scans the tokenizer vocabulary and groups token IDs into three sets
+    depending on whether their surface text is only composed of characters
+    that are legal within a number, an integer, or a boolean literal. These
+    sets are later used to zero out (mask) invalid logits during constrained
+    decoding.
+
+    Args:
+        vocabulary: Mapping of token ID (as string) to its decoded text.
+
+    Returns:
+        A tuple (number_ids, integer_ids, boolean_id), where each element is
+        a set of integer token IDs valid for that value type.
+    """
 
     number_ids = set()
     for id, token in vocabulary.items():
@@ -64,6 +116,20 @@ def valide_ids(vocabulary: dict) -> tuple:
 
 
 def check_this(logits: list, ids: list) -> None:
+    """Mask out every logit whose token ID is not in the allowed set.
+
+    Mutates `logits` in place, setting every index not present in `ids` to
+    negative infinity so it can never be selected by argmax. This is the
+    core masking step of constrained decoding.
+
+    Args:
+        logits: Raw logits produced by the model for the next token.
+        ids: Collection of token IDs that are allowed at this generation
+            step.
+
+    Returns:
+        None. The `logits` list is modified in place.
+    """
     for i in range(len(logits)):
         if i not in ids:
             logits[i] = -np.inf
@@ -71,6 +137,26 @@ def check_this(logits: list, ids: list) -> None:
 
 def convert_value(value: str, param_type: str,
                   token: str, prm: list) -> (float | int | bool | str):
+    """Convert an accumulated raw parameter value to its final typed value.
+
+    Depending on `param_type`, casts the accumulated string to a float,
+    int, or bool. For strings, trims the trailing JSON punctuation
+    (`",` or `"}` / `"}}`) that was generated as part of the decoding
+    stream so only the actual string content remains.
+
+    Args:
+        value: The raw text accumulated so far for this parameter.
+        param_type: Declared type of the parameter ("number", "integer",
+            "boolean", or "string").
+        token: The last generated token, appended to `value` before
+            trimming (used only for the string case).
+        prm: Remaining parameters still to be generated; used to decide
+            whether this string value is followed by another parameter.
+
+    Returns:
+        The parameter value converted to its proper Python type
+        (float, int, bool, or str).
+    """
     try:
         result: Union[float | int | bool | str] = ""
         if value and param_type == "number":
@@ -97,11 +183,40 @@ def convert_value(value: str, param_type: str,
 
 
 def validate_name(ids: list, index: int, gen_ids: list) -> list:
+    """Filter candidate function-name token sequences by the tokens generated so far.
+
+    Keeps only the candidate token-ID sequences (one per known function
+    name) whose prefix matches what has already been generated, then
+    returns the next expected token ID for each surviving candidate. This
+    lets constrained decoding restrict the next token to only those that
+    can continue a valid function name.
+
+    Args:
+        ids: List of candidate token-ID sequences, one per function name.
+        index: Position in the sequence currently being generated.
+        gen_ids: Token IDs generated so far for the function name.
+
+    Returns:
+        The list of token IDs at position `index` for every candidate
+        sequence still consistent with `gen_ids`.
+    """
     ids = [lst for lst in ids if lst[:index] == gen_ids]
     return [i[index] for i in ids]
 
 
 def main() -> None:
+    """Run the full function-calling pipeline.
+
+    Parses CLI arguments and input files, loads the small LLM and its
+    vocabulary, then for each prompt performs constrained, token-by-token
+    generation to produce a JSON object with the selected function name and
+    correctly typed parameters. Results are written to the configured
+    output file.
+
+    Returns:
+        None. Side effects: writes the JSON results to `output_file` and
+        prints progress/debugging information to stdout.
+    """
     p = parsing()
     if not p:
         return
