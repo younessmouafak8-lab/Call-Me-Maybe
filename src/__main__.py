@@ -70,9 +70,9 @@ def check_this(logits: list, ids: list) -> None:
 
 
 def convert_value(value: str, param_type: str,
-                  token: str) -> (float | int | bool | str):
+                  token: str, prm: list) -> (float | int | bool | str):
     try:
-        result: Union[float | int | bool | str]
+        result: Union[float | int | bool | str] = ""
         if value and param_type == "number":
             result = float(value)
         elif value and param_type == "integer":
@@ -84,9 +84,14 @@ def convert_value(value: str, param_type: str,
                 result = bool(1)
         else:
             value += token
-            result = value.split('"')[0]
+            if prm or value.endswith('",'):
+                result = value.split('",')[0]
+            elif value.strip().endswith('"}') or value.strip().endswith('"}}'):
+                result = value.split('"}')[0]
+            else:
+                result = value
         return result
-    except Exception:
+    except ValueError:
         print("try entering a valid value next time :)")
     return result
 
@@ -101,7 +106,8 @@ def main() -> None:
     if not p:
         return
     prompts, functions, output_file, model_name = p
-    func_def = [f"{func['name']}: {func['parameters']}, {func['description']}" for func in functions]
+    func_def = [f"{func['name']}: {func['parameters']}, "
+                f"{func['description']}" for func in functions]
     params = {func["name"]: func["parameters"] for func in functions}
     from llm_sdk import Small_LLM_Model as model  # type: ignore[attr-defined]
     m = model(model_name)
@@ -137,7 +143,6 @@ def main() -> None:
             copy = logits.copy()
             if not name_generated:
                 n_ids = validate_name(name_ids, i, gen_ids)
-                print(f"{n_ids}, {m.decode(n_ids)}, {value}")
                 check_this(copy, n_ids)
                 i += 1
             elif (name_generated and param_generated and
@@ -182,7 +187,7 @@ def main() -> None:
                         string += temp
                 elif not param_saved and (',' in value or '}' in value):
                     tokens_generated = 0
-                    result = convert_value(param_value, param_type, value)
+                    result = convert_value(param_value, param_type, value, prm)
                     parameters_dic.update({param_name: result})
                     param_value = ""
                     if prm:
@@ -198,7 +203,8 @@ def main() -> None:
                     if string.endswith('"}'):
                         ids += m.encode("}").tolist()[0]
                         string += "}"
-                    elif not string.strip().endswith('}}') and "}" not in string:
+                    elif not string.strip().endswith('}}') and \
+                            "}" not in string:
                         ids += m.encode("}}").tolist()[0]
                         string += "}}"
                     elif "}}" not in string:
@@ -208,7 +214,7 @@ def main() -> None:
                     tokens_generated = 0
                     if not len(prm):
                         result = convert_value(param_value,
-                                               param_type, value)
+                                               param_type, value, prm)
                         parameters_dic.update({param_name: result})
                         dic.update({"parameters": parameters_dic})
                         ids += m.encode("}}").tolist()[0]
@@ -218,7 +224,7 @@ def main() -> None:
                         ids += m.encode(",").tolist()[0]
                         string += ","
 
-            # print(value)
+            print(value)
             print(string)
             if param_saved:
                 break

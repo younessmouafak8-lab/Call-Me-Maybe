@@ -3,10 +3,20 @@ import argparse
 import os
 
 
+def check_keys(data: list) -> dict:
+    lst = set()
+    for key, _ in data:
+        if key in lst:
+            raise ValueError("duplicated keys are not tolerated")
+        lst.add(key)
+
+    return dict(data)
+
+
 def get_prompts(file: str) -> list[str]:
     with open(file, "r") as f:
         try:
-            data = json.load(f)
+            data = json.load(f, object_pairs_hook=check_keys)
         except json.decoder.JSONDecodeError:
             raise ValueError("invalid json file")
     if not isinstance(data, list) or not data:
@@ -33,7 +43,7 @@ def get_functions(file: str) -> list[dict]:
     valid_types = {"number", "string", "boolean", "integer"}
     with open(file, "r") as f:
         try:
-            data = json.load(f)
+            data = json.load(f, object_pairs_hook=check_keys)
         except json.decoder.JSONDecodeError:
             raise ValueError("invalid json file")
     if not isinstance(data, list) or not data:
@@ -46,11 +56,31 @@ def get_functions(file: str) -> list[dict]:
             raise ValueError("missing key")
         if len(func) > 4:
             raise ValueError("invalid key:value pair")
+        if not isinstance(func["name"], str) or \
+                not isinstance(func["description"], str):
+            raise ValueError("expected a str for function"
+                             " name and description")
         if ' ' in func["name"] or not len(func["name"]) or \
                 '"' in func["name"] or ',' in func["name"]:
             raise ValueError("invalid function name")
-        if not isinstance(func['parameters'], dict):
+        if len(func["description"]) < 5:
+            raise ValueError("invalid function description")
+
+        if not isinstance(func['parameters'], dict) or \
+                not isinstance(func['returns'], dict):
             raise ValueError("expected a dictionary")
+        if "type" not in func['returns']:
+            raise ValueError("return field missing type")
+        if len(func['returns']) > 1:
+            raise ValueError("multiple key:value pair in return value")
+        for param, value in func['returns'].items():
+            if not len(param) or ' ' in param:
+                raise ValueError(f"invalid return value '{param}'")
+            if not isinstance(value, str):
+                raise ValueError(f"type '{param}' must be a string")
+            if value not in valid_types:
+                raise ValueError(f"parameter '{param}' has unsupported type "
+                                 f"'{value}'")
         for param, value in func['parameters'].items():
             if not len(param) or ' ' in param:
                 raise ValueError(f"invalid parameter '{param}'")
