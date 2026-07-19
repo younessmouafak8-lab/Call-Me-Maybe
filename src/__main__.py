@@ -40,7 +40,7 @@ def prompt_builder(prompt: str, functions: list) -> str:
           "parameters": {{ ... }}}}
     Example:
     Input:
-    What is the sum of 2 and 3?
+    What is the sum of 14 and 15?
     Output:
     {{"prompt": "What is the sum of 14 and 15?", "name": "fn_add_numbers", \
         "parameters": {{"a": 14.0, "b": 15.0}}}}
@@ -63,6 +63,7 @@ def complete_parameters(parameters: dict, name: str) -> list:
         parameters: Mapping of function name to its parameter definitions,
             as declared in functions_definition.json.
         name: Name of the function whose parameters should be prepared.
+
 
     Returns:
         A list of (param_name, injected_string, param_type) tuples, in the

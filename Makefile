@@ -10,6 +10,9 @@ install:
 run:
 	@uv run  python3 -m src --input $(INPUT) --functions_definition $(FUNC_DEF) --output $(OUTPUT)
 
+bonus:
+	@uv run  python3 -m src --model $(MODEL)
+
 debug:
 	@uv run  python3 -pdb -m src
 

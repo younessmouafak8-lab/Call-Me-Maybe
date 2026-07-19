@@ -70,23 +70,23 @@ make clean     # remove __pycache__, .mypy_cache, etc.
 
 The core idea is to intervene on the model's output distribution **before** a token is chosen, instead of hoping the model naturally produces valid JSON.
 
-1. **Vocabulary pre-analysis.** At startup, the tokenizer vocabulary is loaded once and scanned to build three sets of token IDs: those whose surface text is only made of characters valid inside a **number** (digits, `,`, `.`, `+`, `-`), an **integer** (digits, `,`, `}`, `+`, `-`), or a **boolean** literal (`True`/`False` characters). These sets are reused for every parameter of that type, avoiding a full vocabulary scan at every generation step.
+1. **Explicit mask construction from single-character/literal tokens.** At startup, instead of scanning the whole vocabulary for tokens whose *surface text* happens to be built only from allowed characters, each mask is built directly from the tokenizer's encoding of the individual characters (or literals) that are actually legal at that position: `number_ids` from encoding each of `0123456789.+-,` on its own, `integer_ids` from encoding each of `0123456789,}+-` on its own, and `boolean_ids` from encoding the two full literals `"True"` and `"False"` as whole tokens. Building the masks this way ties them to the tokenizer's own token IDs for those exact symbols, rather than to a same-charset heuristic that could also match unrelated words.
 
 2. **Skeleton injection.** Instead of letting the model generate JSON punctuation freely, the fixed parts of the schema (`{"prompt": "...", "name": "`, ` "parameters": {`, the parameter key and opening quote, the closing `}}`) are injected directly into the token stream. The model only ever has to generate the *variable* parts: the function name and the parameter values.
 
 3. **Function-name masking.** Before the function name is fully generated, the decoder only allows tokens that are a valid continuation of at least one real function name (pre-encoded from the function definitions). At each step, candidate name-token sequences are filtered down to those matching the tokens generated so far, and only the next token of the surviving candidates is allowed. This guarantees the model can never hallucinate a function name that doesn't exist.
 
-4. **Type-constrained parameter masking.** Once a parameter's type is known (from `functions_definition.json`), the logits are masked using the pre-computed sets:
-   - `number` → only digit/`,`/`.`/`+`/`-` tokens are allowed.
-   - `integer` → only digit/`,`/`}`/`+`/`-` tokens are allowed.
-   - `boolean` → only `True`/`False` tokens are allowed until one is chosen, then only the closing comma is allowed.
+4. **Type-constrained parameter masking, aware of remaining parameters.** Once a parameter's type is known (from `functions_definition.json`), the logits are masked using the pre-built sets, with the allowed set adapted to whether more parameters still need to be generated afterwards:
+   - `number` → while another parameter still follows, only the `number_ids` set (digits, `.`, `+`, `-`, `,`) is allowed; on the *last* parameter, `,` is dropped in favor of `}`, since a comma would no longer make sense right before the object closes.
+   - `integer` → only the `integer_ids` set (digits, `,`, `}`, `+`, `-`) is allowed.
+   - `boolean` → only the two whole-literal tokens (`True`/`False`) are allowed until one is chosen; afterwards, the decoder allows `,` only if another parameter still follows, or `}` only if this was the last one — so the terminator token itself is now selected based on position rather than always defaulting to a comma.
    - `string` → left unconstrained (any token), since arbitrary text should be preserved as-is; the JSON-closing punctuation is injected rather than generated.
 
 5. **Value extraction and typing.** As tokens are generated for a parameter, they are accumulated into a raw string. Once a delimiter (`,` or `}`) is produced, the raw value is converted to its final Python type (`float`, `int`, `bool`, or a cleaned-up `str`) and stored.
 
 6. **Termination and safety net.** After all parameters for a function are collected, the remaining closing braces are injected to complete the JSON object. A token-count safety net also forces closure if a single parameter generates abnormally long output, preventing an infinite loop on a misbehaving generation.
 
-The result: every generated token is either injected (guaranteed valid) or masked to a schema-valid subset, so the final string is always parseable JSON that matches the declared schema exactly.
+The result: every generated token is either injected (guaranteed valid) or masked to a schema-valid subset built from the tokenizer's own encoding of the allowed symbols, so the final string is always parseable JSON that matches the declared schema exactly.
 
 ## Design Decisions
 
@@ -163,11 +163,7 @@ Produces `data/output/function_calling_results.json`:
 
 ## Resources
 
-- [Anthropic — Tool use / function calling documentation](https://docs.claude.com)
-- [OpenAI — Function calling guide](https://platform.openai.com/docs/guides/function-calling)
-- [Hugging Face — Guided/constrained generation with `outlines`-style approaches (conceptual reference only, not used in this project)](https://huggingface.co)
-- [BPE / SentencePiece tokenization overview](https://huggingface.co/docs/transformers/tokenizer_summary)
-- [Qwen3 model card](https://huggingface.co/Qwen/Qwen3-0.6B)
+
 
 ### AI Usage
 
