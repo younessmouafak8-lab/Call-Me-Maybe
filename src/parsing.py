@@ -103,6 +103,7 @@ def get_functions(file: str) -> list[dict]:
             structure, or an unsupported parameter/return type.
     """
     valid_types = {"number", "string", "boolean", "integer"}
+    names = set()
     with open(file, "r") as f:
         try:
             data = json.load(f, object_pairs_hook=check_keys)
@@ -125,6 +126,9 @@ def get_functions(file: str) -> list[dict]:
         if ' ' in func["name"] or not len(func["name"]) or \
                 '"' in func["name"] or ',' in func["name"]:
             raise ValueError("invalid function name")
+        if func["name"] in names:
+            raise ValueError("duplicate function name")
+        names.add(func["name"])
         if len(func["description"]) < 5:
             raise ValueError("invalid function description")
 

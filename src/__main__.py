@@ -51,7 +51,8 @@ def prompt_builder(prompt: str, functions: list) -> str:
 
 
 def complete_parameters(parameters: dict, name: str) -> list:
-    """Build the ordered list of parameters that must be generated for a function.
+    """Build the ordered list of parameters that must be generated
+    for a function.
 
     For the chosen function name, look up its parameter definitions and
     prepare, for each parameter, the literal text that should be injected
@@ -80,42 +81,7 @@ def complete_parameters(parameters: dict, name: str) -> list:
     return prms
 
 
-def valide_ids(vocabulary: dict) -> tuple:
-    """Classify vocabulary token IDs by the value type they are valid for.
-
-    Scans the tokenizer vocabulary and groups token IDs into three sets
-    depending on whether their surface text is only composed of characters
-    that are legal within a number, an integer, or a boolean literal. These
-    sets are later used to zero out (mask) invalid logits during constrained
-    decoding.
-
-    Args:
-        vocabulary: Mapping of token ID (as string) to its decoded text.
-
-    Returns:
-        A tuple (number_ids, integer_ids, boolean_id), where each element is
-        a set of integer token IDs valid for that value type.
-    """
-
-    number_ids = set()
-    for id, token in vocabulary.items():
-        if token and all(c in "0123456789,.+-" for c in token):
-            number_ids.add(int(id))
-
-    integer_ids = set()
-    for id, token in vocabulary.items():
-        if token and all(c in "0123456789,}+-" for c in token):
-            integer_ids.add(int(id))
-
-    boolean_id = set()
-    for id, token in vocabulary.items():
-        if token and all(c in "TrueFalse" for c in token):
-            boolean_id.add(int(id))
-
-    return (number_ids, integer_ids, boolean_id)
-
-
-def check_this(logits: list, ids: list) -> None:
+def check_this(logits: list, ids: set | list) -> None:
     """Mask out every logit whose token ID is not in the allowed set.
 
     Mutates `logits` in place, setting every index not present in `ids` to
@@ -183,7 +149,8 @@ def convert_value(value: str, param_type: str,
 
 
 def validate_name(ids: list, index: int, gen_ids: list) -> list:
-    """Filter candidate function-name token sequences by the tokens generated so far.
+    """Filter candidate function-name token sequences by
+    the tokens generated so far.
 
     Keeps only the candidate token-ID sequences (one per known function
     name) whose prefix matches what has already been generated, then
@@ -232,11 +199,19 @@ def main() -> None:
     vocabulary = {value: key for key, value in vocabulary.items()}
     start = time()
     output = []
-    number_ids, integer_ids, boolean_ids = valide_ids(vocabulary)
-    static_part = ' "parameters": {'
-    static_ids = m.encode(static_part).tolist()[0]
+    number_ids = set()
+    for n in '0123456789.+-,':
+        number_ids.add(m.encode(n).tolist()[0][0])
+    integer_ids = set()
+    for integer in "0123456789,}+-":
+        integer_ids.add(m.encode(integer).tolist()[0][0])
+    boolean_ids = set()
+    for b in ["True", "False"]:
+        boolean_ids.add(m.encode(b).tolist()[0][0])
     name_ids = [m.encode(func["name"] + '",').tolist()[0]
                 for func in functions]
+    static_part = ' "parameters": {'
+    static_ids = m.encode(static_part).tolist()[0]
     for prompt in prompts:
         string = f'{{"prompt": "{prompt}", "name": "'
         ids = m.encode(prompt_builder(prompt, func_def) + (string)).tolist()[0]
@@ -264,6 +239,10 @@ def main() -> None:
                     param_type == "number" and not param_saved):
                 if prm:
                     check_this(copy, number_ids)
+                else:
+                    nbr_ids = [m.encode(c).tolist()[0][0]
+                               for c in '0123456789.+-}']
+                    check_this(copy, nbr_ids)
 
             elif (name_generated and param_generated and
                     param_type == "integer" and not param_saved):
@@ -272,8 +251,10 @@ def main() -> None:
                     param_type == "boolean" and not param_saved):
                 if not ("True" in param_value or "False" in param_value):
                     check_this(copy, boolean_ids)
-                elif "," not in param_value:
+                elif "," not in param_value and prm:
                     check_this(copy, m.encode(',').tolist()[0])
+                elif not prm:
+                    check_this(copy, m.encode('}').tolist()[0])
             next_token_id = int(np.argmax(copy))
             ids.append(next_token_id)
             value = m.decode(next_token_id)
