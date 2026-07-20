@@ -162,13 +162,14 @@ Produces `data/output/function_calling_results.json`:
 ```
 
 ## Resources
-
+- Function Calling?: https://finetunedb.com/blog/what-is-function-calling-simply-explained/
+- LLM Visualization: https://bbycroft.net/llm
+- LLM Generation Road: https://blog.langformers.com/how-llms-work/
 
 
 ### AI Usage
 
 AI assistance (Claude) was used for:
 - Adding PEP 257–style docstrings (summary, `Args`, `Returns`, `Raises`) to every function in `main.py` and `parsing.py`, after the core logic had already been implemented and tested.
-- Drafting and structuring this README, based on a description of the actual implementation and the project's mandatory sections.
-
-AI was **not** used to design or write the constrained-decoding logic, the argument-masking strategy, or the input-validation rules — those were implemented and understood independently, then reviewed with peers before/after any AI-assisted documentation pass.
+- Drafting and structuring this README
+- Explaining some core concepts, like the steps that goes on in the LLM after given the text input.
