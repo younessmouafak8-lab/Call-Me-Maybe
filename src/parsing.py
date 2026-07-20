@@ -123,8 +123,7 @@ def get_functions(file: str) -> list[dict]:
                 not isinstance(func["description"], str):
             raise ValueError("expected a str for function"
                              " name and description")
-        if ' ' in func["name"] or not len(func["name"]) or \
-                '"' in func["name"] or ',' in func["name"]:
+        if not func["name"].isidentifier() or not func["name"].isascii():
             raise ValueError("invalid function name")
         if func["name"] in names:
             raise ValueError("duplicate function name")

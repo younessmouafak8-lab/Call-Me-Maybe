@@ -146,6 +146,8 @@ def convert_value(value: str, param_type: str,
         return result
     except ValueError:
         print("try entering a valid value next time :)")
+        if param_type == "number" or param_type == "integer":
+            result = 0
     return result
 
 
@@ -262,6 +264,9 @@ def main() -> None:
             string += value
             if not name_generated:
                 if '",' in value:
+                    tmp = value.split('",')
+                    if tmp[0]:
+                        name += tmp[0]
                     name_generated = True
                     dic.update({"name": name})
                 else:
