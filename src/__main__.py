@@ -216,7 +216,8 @@ def main() -> None:
     static_part = ' "parameters": {'
     static_ids = m.encode(static_part).tolist()[0]
     for prompt in prompts:
-        string = f'{{"prompt": "{prompt}", "name": "'
+        escaped_prompt = json.dumps(prompt)
+        string = f'{{"prompt": {escaped_prompt}, "name": "'
         ids = m.encode(prompt_builder(prompt, func_def) + (string)).tolist()[0]
         name_generated = False
         param_generated = False
@@ -231,8 +232,10 @@ def main() -> None:
         tokens_generated = 0
         i = 0
         gen_ids: list[int] = []
+        param_ids = []
         while 1:
-            logits = m.get_logits_from_input_ids(ids)
+            temp = ids + param_ids
+            logits = m.get_logits_from_input_ids(temp)
             copy = logits.copy()
             if not name_generated:
                 n_ids = validate_name(name_ids, i, gen_ids)
@@ -259,9 +262,14 @@ def main() -> None:
                 elif not prm:
                     check_this(copy, m.encode('}').tolist()[0])
             next_token_id = int(np.argmax(copy))
-            ids.append(next_token_id)
-            value = m.decode(next_token_id)
-            string += value
+            if (name_generated and param_generated and
+                    param_type == "string" and not param_saved):
+                value = m.decode(next_token_id)
+                string += value
+            else:
+                ids.append(next_token_id)
+                value = m.decode(next_token_id)
+                string += value
             if not name_generated:
                 if '",' in value:
                     tmp = value.split('",')
@@ -290,6 +298,9 @@ def main() -> None:
                 elif not param_saved and (',' in value or '}' in value):
                     tokens_generated = 0
                     result = convert_value(param_value, param_type, value, prm)
+                    if param_type == "string":
+                        ids += (param_ids)
+                        param_ids = []
                     parameters_dic.update({param_name: result})
                     param_value = ""
                     if prm:
@@ -300,6 +311,9 @@ def main() -> None:
                         param_saved = True
                 elif param_generated and not param_saved:
                     param_value += value
+                    if param_type == "string":
+                        save = json.dumps(param_value)
+                        param_ids = m.encode(save[1:-1]).tolist()[0]
                 if param_saved:
                     dic.update({"parameters": parameters_dic})
                     if string.endswith('"}'):
@@ -327,8 +341,10 @@ def main() -> None:
                         string += ","
 
             print(value)
+
             print(string)
             if param_saved:
+                json.loads(string)
                 break
         print(dic)
         print("###############################################")
@@ -339,7 +355,7 @@ def main() -> None:
         json.dump(output, f, indent=4)
 
 
-try:
-    main()
-except Exception as e:
-    print(f"Error: {e}")
+# try:
+main()
+# except Exception as e:
+#     print(f"Error: {e}")
