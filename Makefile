@@ -18,7 +18,7 @@ debug:
 
 clean:
 	@echo "Cleaning temporary files..."
-	rm -rf __pycache__ .mypy_cache .pytest_cache
+	rm -rf __pycache__ .mypy_cache
 	rm -rf */__pycache__
 	rm -f *.pyc
 

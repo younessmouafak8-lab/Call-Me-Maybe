@@ -176,8 +176,22 @@ def validate_name(ids: list, index: int, gen_ids: list) -> list:
 
 
 def my_encode(text: str, m: model) -> Any:
+    """Tokenize a text string into a flat list of token IDs.
+
+    Thin wrapper around the model's `encode` method: encodes `text`,
+    takes the first (and only) sequence from the batch, then converts it
+    to a numpy array of ints and back to a plain Python list so it can be
+    freely concatenated with other generated token-ID lists.
+
+    Args:
+        text: The text to tokenize.
+        m: The loaded model instance whose tokenizer/encoder is used.
+
+    Returns:
+        A list of integer token IDs representing `text`.
+    """
     ids = m.encode(text)
-    ids = np.array(ids[0], dtype=int).tolist()
+    ids = np.array(ids[0]).tolist()
     return ids
 
 
@@ -208,23 +222,24 @@ def main() -> None:
 
     output = []
 
-    number_ids = set()
+    number_ids = []
     for n in '0123456789.+-,':
-        number_ids.add(my_encode(n, m)[0])
+        number_ids.append(my_encode(n, m)[0])
 
-    integer_ids = set()
-    for integer in "0123456789,}+-":
-        integer_ids.add(my_encode(integer, m)[0])
+    integer_ids = []
+    for integer in "0123456789,+-":
+        integer_ids.append(my_encode(integer, m)[0])
 
-    boolean_ids = set()
+    boolean_ids = []
     for b in ["True", "False"]:
-        boolean_ids.add(my_encode(b, m)[0])
+        boolean_ids.append(my_encode(b, m)[0])
 
     name_ids = [my_encode(func["name"] + '",', m)
                 for func in functions]
 
     static_part = ' "parameters": {'
     static_ids = my_encode(static_part, m)
+
     start = time()
     for prompt in prompts:
         string = f'{{"prompt": {prompt}, "name": "'
@@ -254,15 +269,38 @@ def main() -> None:
             elif (name_generated and param_generated and
                     param_type == "number" and not param_saved):
                 if prm:
-                    check_this(copy, number_ids)
+                    if param_value:
+                        nbr_ids = [my_encode(c, m)[0]
+                                   for c in '0123456789.,']
+                    else:
+                        nbr_ids = number_ids
+                    check_this(copy, nbr_ids)
                 else:
-                    nbr_ids = [my_encode(c, m)[0]
-                               for c in '0123456789.+-}']
+                    if param_value:
+                        nbr_ids = [my_encode(c, m)[0]
+                                   for c in '0123456789.}']
+                    else:
+                        nbr_ids = [my_encode(c, m)[0]
+                                   for c in '0123456789.+-}']
                     check_this(copy, nbr_ids)
 
             elif (name_generated and param_generated and
                     param_type == "integer" and not param_saved):
-                check_this(copy, integer_ids)
+                if prm:
+                    if param_value:
+                        int_ids = [my_encode(c, m)[0]
+                                   for c in '0123456789,']
+                    else:
+                        int_ids = integer_ids
+                    check_this(copy, int_ids)
+                else:
+                    if param_value:
+                        int_ids = [my_encode(c, m)[0]
+                                   for c in '0123456789}']
+                    else:
+                        int_ids = [my_encode(c, m)[0]
+                                   for c in '0123456789+-}']
+                    check_this(copy, int_ids)
 
             elif (name_generated and param_generated and
                     param_type == "boolean" and not param_saved):
@@ -305,6 +343,7 @@ def main() -> None:
                         param_name, temp, param_type = prm.pop(0)
                         ids += my_encode(temp, m)
                         string += temp
+
                 elif not param_saved and (',' in value or '}' in value):
                     tokens_generated = 0
                     result = convert_value(param_value, param_type, value, prm)
@@ -316,6 +355,7 @@ def main() -> None:
                         string += temp
                     else:
                         param_saved = True
+
                 elif param_generated and not param_saved:
                     param_value += value
 
