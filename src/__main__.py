@@ -6,10 +6,11 @@ constrained decoding to guarantee valid, schema-compliant JSON output.
 """
 
 from .parsing import parsing
+from llm_sdk import Small_LLM_Model as model  # type: ignore[attr-defined]
 import json
 import numpy as np
 from time import time
-from typing import Union
+from typing import Union, Any
 
 
 def prompt_builder(prompt: str, functions: list) -> str:
@@ -174,6 +175,12 @@ def validate_name(ids: list, index: int, gen_ids: list) -> list:
     return [i[index] for i in ids]
 
 
+def my_encode(text: str, m: model) -> Any:
+    ids = m.encode(text)
+    ids = np.array(ids[0], dtype=int).tolist()
+    return ids
+
+
 def main() -> None:
     """Run the full function-calling pipeline.
 
@@ -191,33 +198,37 @@ def main() -> None:
     if not p:
         return
     prompts, functions, output_file, model_name = p
+
     func_def = [f"{func['name']}: {func['parameters']}, "
                 f"{func['description']}" for func in functions]
+
     params = {func["name"]: func["parameters"] for func in functions}
-    from llm_sdk import Small_LLM_Model as model  # type: ignore[attr-defined]
+
     m = model(model_name)
-    vocabulary_path = m.get_path_to_vocab_file()
-    with open(vocabulary_path, "r") as f:
-        vocabulary = json.load(f)
-    vocabulary = {value: key for key, value in vocabulary.items()}
-    start = time()
+
     output = []
+
     number_ids = set()
     for n in '0123456789.+-,':
-        number_ids.add(m.encode(n).tolist()[0][0])
+        number_ids.add(my_encode(n, m)[0])
+
     integer_ids = set()
     for integer in "0123456789,}+-":
-        integer_ids.add(m.encode(integer).tolist()[0][0])
+        integer_ids.add(my_encode(integer, m)[0])
+
     boolean_ids = set()
     for b in ["True", "False"]:
-        boolean_ids.add(m.encode(b).tolist()[0][0])
-    name_ids = [m.encode(func["name"] + '",').tolist()[0]
+        boolean_ids.add(my_encode(b, m)[0])
+
+    name_ids = [my_encode(func["name"] + '",', m)
                 for func in functions]
+
     static_part = ' "parameters": {'
-    static_ids = m.encode(static_part).tolist()[0]
+    static_ids = my_encode(static_part, m)
+    start = time()
     for prompt in prompts:
         string = f'{{"prompt": {prompt}, "name": "'
-        ids = m.encode(prompt_builder(prompt, func_def) + (string)).tolist()[0]
+        ids = my_encode(prompt_builder(prompt, func_def) + (string), m)
         name_generated = False
         param_generated = False
         param_saved = False
@@ -231,38 +242,42 @@ def main() -> None:
         tokens_generated = 0
         i = 0
         gen_ids: list[int] = []
-        param_ids = []
         while 1:
-            temp = ids + param_ids
-            logits = m.get_logits_from_input_ids(temp)
-            copy = logits.copy()
+            logits = m.get_logits_from_input_ids(ids)
+            copy = logits
+
             if not name_generated:
                 n_ids = validate_name(name_ids, i, gen_ids)
                 check_this(copy, n_ids)
                 i += 1
+
             elif (name_generated and param_generated and
                     param_type == "number" and not param_saved):
                 if prm:
                     check_this(copy, number_ids)
                 else:
-                    nbr_ids = [m.encode(c).tolist()[0][0]
+                    nbr_ids = [my_encode(c, m)[0]
                                for c in '0123456789.+-}']
                     check_this(copy, nbr_ids)
+
             elif (name_generated and param_generated and
                     param_type == "integer" and not param_saved):
                 check_this(copy, integer_ids)
+
             elif (name_generated and param_generated and
                     param_type == "boolean" and not param_saved):
                 if not ("True" in param_value or "False" in param_value):
                     check_this(copy, boolean_ids)
                 elif "," not in param_value and prm:
-                    check_this(copy, m.encode(',').tolist()[0])
+                    check_this(copy, my_encode(',', m))
                 elif not prm:
-                    check_this(copy, m.encode('}').tolist()[0])
+                    check_this(copy, my_encode('}', m))
+
             next_token_id = int(np.argmax(copy))
             value = m.decode(next_token_id)
             ids.append(next_token_id)
             string += value
+
             if not name_generated:
                 if '",' in value:
                     tmp = value.split('",')
@@ -273,9 +288,11 @@ def main() -> None:
                 else:
                     name += value
                     gen_ids.append(next_token_id)
+
             if name_generated and "parameters" not in string:
                 ids += static_ids
                 string += static_part
+
             if name_generated and "parameters" in string:
                 tokens_generated += 1
                 if not param_generated:
@@ -286,7 +303,7 @@ def main() -> None:
                     param_value = ""
                     if prm:
                         param_name, temp, param_type = prm.pop(0)
-                        ids += m.encode(temp).tolist()[0]
+                        ids += my_encode(temp, m)
                         string += temp
                 elif not param_saved and (',' in value or '}' in value):
                     tokens_generated = 0
@@ -295,24 +312,26 @@ def main() -> None:
                     param_value = ""
                     if prm:
                         param_name, temp, param_type = prm.pop(0)
-                        ids += m.encode(temp).tolist()[0]
+                        ids += my_encode(temp, m)
                         string += temp
                     else:
                         param_saved = True
                 elif param_generated and not param_saved:
                     param_value += value
+
                 if param_saved:
                     dic.update({"parameters": parameters_dic})
                     if string.endswith('"}'):
-                        ids += m.encode("}").tolist()[0]
+                        ids += my_encode("}", m)
                         string += "}"
                     elif not string.strip().endswith('}}') and \
                             "}" not in string:
-                        ids += m.encode("}}").tolist()[0]
+                        ids += my_encode("}}", m)
                         string += "}}"
                     elif "}}" not in string:
-                        ids += m.encode("}").tolist()[0]
+                        ids += my_encode("}", m)
                         string += "}"
+
                 if tokens_generated > len(prompt) + 10:
                     tokens_generated = 0
                     if not len(prm):
@@ -320,11 +339,11 @@ def main() -> None:
                                                param_type, value, prm)
                         parameters_dic.update({param_name: result})
                         dic.update({"parameters": parameters_dic})
-                        ids += m.encode("}}").tolist()[0]
+                        ids += m.my_encode("}}", m)
                         string += "}}"
                         param_saved = True
                     else:
-                        ids += m.encode(",").tolist()[0]
+                        ids += my_encode(",", m)
                         string += ","
 
             print(value)
@@ -340,7 +359,7 @@ def main() -> None:
         json.dump(output, f, indent=4)
 
 
-# try:
-main()
-# except Exception as e:
-#     print(f"Error: {e}")
+try:
+    main()
+except Exception as e:
+    print(f"Error: {e}")
